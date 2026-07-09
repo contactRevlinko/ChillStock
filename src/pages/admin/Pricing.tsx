@@ -28,7 +28,7 @@ export default function Pricing() {
     const fetchPackages = async () => {
       try {
         const pkgs = await apiFetch('/packages/active');
-        setPackages(pkgs);
+        setPackages(Array.isArray(pkgs) ? pkgs : []);
       } catch (err) {
         toast.error('Failed to load pricing packages');
       }

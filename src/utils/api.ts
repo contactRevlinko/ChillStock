@@ -28,6 +28,11 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   const data = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
+    if (response.status === 402 && data.redirect) {
+      window.location.href = data.redirect;
+      throw new Error('Redirecting to pricing...');
+    }
+    
     if (!data.message) {
       console.error(`API Fetch Error [${response.status}] for ${endpoint}:`, typeof data === 'string' ? data : JSON.stringify(data));
     }

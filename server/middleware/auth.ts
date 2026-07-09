@@ -80,11 +80,11 @@ export const requireActiveSubscription = (req: AuthRequest, res: Response, next:
     const { paymentStatus, subscriptionEndDate } = req.user as any;
     
     if (paymentStatus !== "Paid") {
-      return res.status(402).json({ message: "Payment required. Subscription is not active.", redirect: "/pricing" });
+      return res.status(402).json({ message: "Payment required. Subscription is not active.", redirect: "/admin/pricing" });
     }
     
     if (subscriptionEndDate && new Date(subscriptionEndDate) < new Date()) {
-      return res.status(402).json({ message: "Subscription expired.", redirect: "/pricing", expired: true });
+      return res.status(402).json({ message: "Subscription expired.", redirect: "/admin/pricing", expired: true });
     }
     
     return next();

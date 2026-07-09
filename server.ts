@@ -8,7 +8,7 @@ import { createServer as createViteServer } from "vite";
 // Load environment variables
 dotenv.config();
 
-// Imports for routes will go here
+// Imports for routes
 import authRoutes from "./server/routes/auth.routes";
 import adminRoutes from "./server/routes/admin.routes";
 import superAdminRoutes from "./server/routes/superadmin.routes";
@@ -18,87 +18,82 @@ import settingsRoutes from "./server/routes/settings.routes";
 import paymentRoutes from "./server/routes/payment.routes";
 import { initCronJobs } from "./server/cron";
 
-async function startServer() {
-  const app = express();
-  // const PORT = process.env.PORT || 3000;
-  const PORT = Number(process.env.PORT) || 3000;
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
 
-  // Request logger
-  app.use((req, res, next) => {
-    const start = Date.now();
-    res.on('finish', () => {
-      console.log(`[${req.method}] ${req.url} - ${res.statusCode} (${Date.now() - start}ms)`);
-    });
-    next();
-  });
-  
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-  // Database Connection
+// Database Connection Logic (Serverless Compatible)
+let isConnected = false;
+const connectDB = async () => {
+  if (isConnected || mongoose.connection.readyState === 1) return;
   if (process.env.MONGODB_URI) {
     try {
       await mongoose.connect(process.env.MONGODB_URI);
+      isConnected = true;
       console.log("Connected to MongoDB successfully");
+      const { seedDatabase } = await import("./server/db-seed.js");
+      await seedDatabase();
     } catch (error) {
       console.error("MongoDB connection error:", error);
     }
-  } else {
-    console.warn("WARNING: MONGODB_URI is not set. Using in-memory MongoDB for demo purposes.");
-    try {
-      const { MongoMemoryServer } = await import("mongodb-memory-server");
-      const mongoServer = await MongoMemoryServer.create();
-      const mongoUri = mongoServer.getUri();
-      await mongoose.connect(mongoUri);
-      console.log("Connected to In-Memory MongoDB successfully at", mongoUri);
-    } catch (error) {
-      console.error("Failed to start in-memory MongoDB:", error);
-    }
   }
+};
 
-  // Seed default admin if user collection is empty (works for both persistent and in-memory)
-  if (mongoose.connection.readyState === 1) {
-    const { seedDatabase } = await import("./server/db-seed.js");
-    await seedDatabase();
+// Ensure DB is connected for every API request
+app.use(async (req, res, next) => {
+  if (req.url.startsWith('/api')) {
+    await connectDB();
   }
+  next();
+});
 
-  // Initialize background cron jobs
-  initCronJobs();
+// API Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/superadmin", superAdminRoutes);
+app.use("/api/branch", branchRoutes);
+app.use("/api/packages", packagesRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/payment", paymentRoutes);
 
-  // API Routes
-  app.use("/api/auth", authRoutes);
-  app.use("/api/admin", adminRoutes);
-  app.use("/api/superadmin", superAdminRoutes);
-  app.use("/api/branch", branchRoutes);
-  app.use("/api/packages", packagesRoutes);
-  app.use("/api/settings", settingsRoutes);
-  app.use("/api/payment", paymentRoutes);
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" });
+});
 
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" });
-  });
+// Start server logic (Only for local dev or Railway, NOT Vercel)
+const isVercel = process.env.VERCEL === '1';
 
-  // Vite middleware for development
+if (!isVercel) {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
+    }).then(vite => {
+      app.use(vite.middlewares);
+      startListening();
     });
-    app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+    startListening();
   }
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
-
+  function startListening() {
+    connectDB().then(() => {
+      initCronJobs();
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+      });
+    });
+  }
 }
 
-startServer();
+// Export the app for Vercel Serverless
+export default app;

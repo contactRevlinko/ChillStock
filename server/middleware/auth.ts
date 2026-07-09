@@ -32,8 +32,9 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
     req.user = {
       ...decoded,
       userId: userId,
-      subscriptionEndDate: decoded.subscriptionEndDate,
-      paymentStatus: decoded.paymentStatus
+      subscriptionEndDate: dbUser.subscriptionEndDate,
+      paymentStatus: dbUser.paymentStatus,
+      role: dbUser.role
     };
 
     // Auto-logout enforcement: If the subscription is expired, kick them out
